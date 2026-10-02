@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  discovery-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dazn_anti_piracy_pipeline
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./outputs:/app/outputs
+    command: ["--queries-per-lang", "5", "--max-results", "5"]
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dazn_anti_piracy_tests
+    entrypoint: ["python", "-m", "pytest"]
+    command: ["tests/"]
+    volumes:
+      - ./outputs:/app/outputs

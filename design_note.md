@@ -6,34 +6,68 @@ The Anti-Piracy Discovery & Verification System is designed as a modular, end-to
 
 ```mermaid
 flowchart TD
-    subgraph Discovery Module
-        A[Search Orchestrator] -->|Multi-Language Queries| B1[Yandex Adapter]
-        A -->|EN / RU / ZH / Event| B2[Baidu Adapter]
-        B1 --> C[Deduplication & Canonical URL Normalizer]
-        B2 --> C
+    subgraph STAGE1 ["Stage 1: Multi-Engine Search Discovery"]
+        Q["Multi-Language Search Queries<br>(English, Russian, Chinese, Event-Based)"] --> ORCH["Search Orchestrator"]
+        ORCH --> YANDEX["Yandex Engine Adapter<br>(SerpApi / HTML SERP)"]
+        ORCH --> BAIDU["Baidu Engine Adapter<br>(SerpApi / HTML SERP)"]
+        YANDEX --> DUP["Deduplication & Canonical URL Normalizer"]
+        BAIDU --> DUP
     end
 
-    subgraph Domain Classification Module
-        C --> D[Domain Classifier]
-        D -->|Allowlist Match| E1[Official Domain]
-        D -->|Brand Impersonation / Keywords / High-Risk TLD| E2[Suspected Pirate Domain]
-        D -->|RDAP / WHOIS & IP Lookup| E3[Hosting ASN Intelligence]
+    subgraph STAGE2 ["Stage 2: Domain Classification Engine"]
+        DUP --> CLASSIFY["Domain Classifier & Heuristic Scorer"]
+        CLASSIFY --> CHECK{"Is Domain<br>Allowlisted?"}
+        
+        CHECK -->|"YES (dazn.com, YouTube, News)"| OFF["OFFICIAL DOMAIN<br>Confidence: 95% | Fast-Track"]
+        CHECK -->|"NO"| HEURISTIC["Evaluate Heuristic Signals:<br>• Brand Impersonation (+50)<br>• Piracy Keywords in Domain/URL/Title/Body (+15..35)<br>• High-Risk TLDs .xyz, .top (+20)<br>• Ad & Popup Networks (+25)<br>• Anonymous WHOIS Privacy (+15)"]
+        HEURISTIC --> SCORE["Compute Confidence Score (0 - 100)"]
+        SCORE --> EVAL{"Confidence<br>Threshold"}
+        EVAL -->|"Score >= 40"| PIRATE["SUSPECTED PIRATE<br>Trigger Headless Sandbox"]
+        EVAL -->|"20 <= Score < 40"| UNCERTAIN["UNCERTAIN DOMAIN<br>Trigger Headless Sandbox"]
+        EVAL -->|"Score < 20"| OFF
     end
 
-    subgraph Detection & Verification Module
-        E2 --> F[Playwright Sandbox Browser]
-        F --> G1[DOM Video Inspector HTML5 / JS Players]
-        F --> G2[iframe Embed Sniffer]
-        F --> G3[Network Sniffer m3u8 / mpd Manifests]
-        G1 & G2 & G3 --> H[Playback Status Evaluator]
+    subgraph STAGE3 ["Stage 3: Sandboxed Playwright Verification"]
+        PIRATE --> PLAYWRIGHT["Playwright Headless Chromium Sandbox<br>(Ad & Popup Blocked Context)"]
+        UNCERTAIN --> PLAYWRIGHT
+        
+        PLAYWRIGHT --> DOM_INSPECT["DOM Video Inspector<br>(HTML5, JW Player, Video.js, Clappr, hls.js)"]
+        PLAYWRIGHT --> IFRAME_INSPECT["iframe Embed Inspector<br>(Extracts Embed Sources & Host Domains)"]
+        PLAYWRIGHT --> NET_SNIFF["Network Stream Sniffer<br>(Intercepts .m3u8 HLS / .mpd DASH Manifests & Chunks)"]
+        
+        DOM_INSPECT --> PLAYBACK_EVAL["Playback Status Evaluator<br>(currentTime Advancement / Segment Requests)"]
+        IFRAME_INSPECT --> PLAYBACK_EVAL
+        NET_SNIFF --> PLAYBACK_EVAL
     end
 
-    subgraph Evidence & Output Module
-        H --> I1[Timestamped Screenshots]
-        H --> I2[Auto DMCA Takedown Drafts]
-        H --> I3[Telegram Link Scraper]
-        H --> J[CSV & JSON Reports + Summary Dashboard]
+    subgraph STAGE4 ["Stage 4: Network Intelligence & Evidence Capture"]
+        PLAYBACK_EVAL --> WHOIS_LOOKUP["IP & RDAP / ASN Lookup<br>(Identifies Cloudflare, Fastly, Bulletproof Host)"]
+        PLAYBACK_EVAL --> SCREENSHOT["Timestamped Screenshot Capturer<br>(Full Page & Cropped Player Area)"]
+        PLAYBACK_EVAL --> TAKEDOWN["Auto DMCA Takedown Notice Generator"]
+        PLAYBACK_EVAL --> TELEGRAM["Social & Telegram Link Scraper"]
     end
+
+    subgraph STAGE5 ["Stage 5: Reporting & Deliverables"]
+        OFF --> EXPORTER["Report Exporter & Summary Engine"]
+        WHOIS_LOOKUP --> EXPORTER
+        SCREENSHOT --> EXPORTER
+        TAKEDOWN --> EXPORTER
+        TELEGRAM --> EXPORTER
+        
+        EXPORTER --> CSV_OUT["CSV Datasets<br>(report.csv & report_pirates.csv)"]
+        EXPORTER --> JSON_OUT["JSON Datasets<br>(report.json & report_pirates.json)"]
+        EXPORTER --> DASHBOARD["Executive Summary Dashboard<br>(summary.md & Console Summary)"]
+    end
+
+    classDef official fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724;
+    classDef pirate fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef uncertain fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#856404;
+    classDef decision fill:#d1ecf1,stroke:#17a2b8,stroke-width:2px,color:#0c5460;
+
+    class OFF official;
+    class PIRATE pirate;
+    class UNCERTAIN uncertain;
+    class CHECK,EVAL decision;
 ```
 
 ---
@@ -47,13 +81,13 @@ flowchart TD
 
 ### Module 2: Domain Classification (`classification/`)
 - **Allowlist Filtering:** Checks candidate domains against an extensible allowlist (`dazn.com`, `kayosports.com.au`, `foxtel.com.au`, `binge.com.au`, official social accounts, app stores, Wikipedia, and verified media news sites).
-- **Heuristic Scoring Model (0–100):** Evaluates non-allowlisted domains based on:
+- **Heuristic Scoring Model (0-100):** Evaluates non-allowlisted domains based on:
   - Brand Impersonation (e.g., `dazn-live.xyz`, `watchdazn.com`): **+50 pts**
   - High-Risk TLDs (`.xyz`, `.top`, `.stream`, `.cc`, `.ru`, `.cn`): **+20 pts**
   - Piracy Keywords in Domain / URL / Title / Snippet (`free`, `stream`, `iptv`, `zhibo`, `m3u8`): **+15 to +35 pts**
 - **Classification Thresholds:**
   - `Confidence >= 40`: **Pirate**
-  - `Confidence 20–39`: **Uncertain**
+  - `Confidence 20-39`: **Uncertain**
   - `Confidence < 20`: **Official**
 - **Network Intelligence (Bonus):** Performs IP resolution and RDAP/ASN lookup (e.g. Cloudflare, Fastly, bulletproof host identification) for takedown routing.
 

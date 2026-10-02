@@ -26,28 +26,6 @@ docker compose run --rm test
 
 ---
 
-## 📊 Module 5: Pipeline Execution Summary Report
-
-| Metric | Count |
-| :--- | :---: |
-| **Total URLs Discovered** | 20 |
-| **Official / Authorised Domains** | 3 |
-| **Suspected Pirate Domains** | 12 |
-| **Uncertain Domains** | 5 |
-| **Video Players Detected** | 10 |
-| **Actively Playing Streams** | 7 |
-
-### Top Confirmed Pirate Domains
-| Domain | Frequency |
-| :--- | :--- |
-| `dazn-live.xyz` | 4 |
-| `westreamf1.st` | 3 |
-| `f1hd.net` | 2 |
-| `motogplive.com` | 2 |
-| `vipleague.st` | 1 |
-
----
-
 ## 📁 Output Artifacts (`outputs/`)
 
 - `report.csv`: Complete discovery & classification dataset.
@@ -59,10 +37,25 @@ docker compose run --rm test
 
 ---
 
-## 🛡️ Architecture & Modules
+## ⚙️ Configuration (`.env`)
 
-1. **Module 1: Search Discovery (`discovery/`)** - Multi-language Yandex & Baidu SERP discovery with canonical URL deduplication.
-2. **Module 2: Domain Classification (`classification/`)** - Allowlist matching & 0–100 heuristic scoring (Brand impersonation, keywords including HD, WHOIS privacy, ad networks).
-3. **Module 3: Video Player Detection (`detection/`)** - Playwright headless sandbox inspecting HTML5 `<video>`, JS players (JW Player, Video.js, Clappr, hls.js, etc.), iframe embeds, and `.m3u8` / `.mpd` network sniffer.
-4. **Module 4: Evidence Capture (`evidence/`)** - Full-page & cropped player screenshots with UTC timestamping, stream source extraction, and fallback card generation.
-5. **Module 5: Output & Reporting (`reporting/`)** - Export to CSV/JSON matching all mandatory fields plus hosting IP/ASN intelligence and summary dashboard.
+Environment variables are managed in `.env` (excluded from git via `.gitignore`):
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `SERPAPI_API_KEY` | SerpApi key for live Yandex / Baidu search queries |
+| `MAX_RESULTS_PER_QUERY` | `10` | Max search results to process per query |
+| `HEADLESS` | `true` | Run Playwright Chromium in headless mode |
+| `BROWSER_TIMEOUT_MS` | `30000` | Page navigation timeout (ms) |
+| `PLAYER_DETECTION_WAIT_SEC` | `5` | Inspection window wait time for video playback |
+| `CONCURRENCY` | `3` | Parallel page verification concurrency |
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+
+---
+
+## ⚠️ Known Limitations
+
+1. **Search Engine Anti-Bot Controls:** Search engines (Yandex, Baidu) periodically enforce CAPTCHAs or rate-limiting on direct SERP HTML scraping. The pipeline handles this gracefully via SerpApi or heuristic SERP fallbacks.
+2. **Geo-blocking & Regional Access:** Certain regional streams (e.g. Russia, China) restrict access based on client IP location. Rotating proxy support (BrightData/Oxylabs) is recommended for production scaling.
+3. **JS Obfuscation & Dynamic Token Expiry:** Advanced pirate sites employ obfuscated stream URLs (`.m3u8` with short-lived tokens). The Network Sniffer captures outgoing requests directly from page context during rendering.
+

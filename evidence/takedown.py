@@ -52,6 +52,7 @@ class TakedownNoticeGenerator:
 - **Discovered Stream Source / Manifest:** `{stream_source}`
 - **Evidence Timestamp (UTC):** `{timestamp}`
 - **Evidence Screenshot:** `{record.get("screenshot_path", "N/A")}`
+- **Brand Asset Match (Perceptual Hash):** {record.get("logo_match_details", "N/A")}
 
 ---
 

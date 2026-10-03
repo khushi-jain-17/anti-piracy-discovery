@@ -63,38 +63,9 @@ class YandexSearchEngine(BaseSearchEngine):
         except Exception as e:
             logger.debug(f"[Yandex] Direct HTML scraper exception for '{query}': {e}")
 
-        # 3. Intelligent fallback generator for regional piracy queries (ensures pipeline completeness)
-        return self._generate_fallback(query, max_results)
-
-    def _generate_fallback(self, query: str, max_results: int) -> List[SearchResult]:
-        logger.info(f"[Yandex] Using heuristic SERP parser fallback for query: '{query}'")
-        
-        # Realistic pirate and official targets surfaced by Yandex for Russian/English piracy queries
-        mock_db = [
-            # Official DAZN / Rights Holder
-            ("https://www.dazn.com/ru-RU/welcome", "DAZN Россия - Прямой эфир и онлайн видео", "Смотрите спортивные трансляции в прямом эфире на DAZN.", "dazn.com"),
-            ("https://www.dazn.com/en-GLOBAL/welcome", "DAZN Live Sports Streaming", "Watch UEFA, Moto GP, Formula 1 live streaming.", "dazn.com"),
-            ("https://apps.apple.com/app/dazn-live-sports-streaming/id1129523589", "DAZN App Store Listing", "Official DAZN iOS Application.", "apple.com"),
-            
-            # Pirate streaming sites
-            ("https://dazn-live.xyz/stream/motogp-free", "DAZN смотреть онлайн бесплатно - Прямой Эфир", "Смотреть DAZN прямой эфир бесплатно в хорошем качестве HD.", "dazn-live.xyz"),
-            ("https://vipleague.st/dazn-1-live-stream", "VIPLeague - Watch DAZN 1 Live Stream Online Free", "Free HD live streams for DAZN channels, Formula 1, and Moto GP.", "vipleague.st"),
-            ("https://crackstreams.me/watch-dazn-free", "Crackstreams - DAZN Free Live Stream IPTV", "Watch DAZN live stream free online without registration.", "crackstreams.me"),
-            ("https://buffstreams.app/dazn-boxing-live", "Buffstreams - Watch DAZN Channel Live Online", "Free sports stream, IPTV m3u8 playlist for DAZN live events.", "buffstreams.app"),
-            ("https://livesport24.ru/dazn-smotret-online", "DAZN смотреть онлайн бесплатно - Прямая трансляция", "Прямая трансляция DAZN, смотреть футбол и Moto GP бесплатно.", "livesport24.ru"),
-            ("https://hesgoal.com/dazn-f1-stream", "Hesgoal DAZN Formula 1 Live Stream", "Free stream for Formula 1 DAZN broadcast.", "hesgoal.com"),
-            ("https://dazn.love/live-tv-stream", "DAZN Love - Free HD Sports Stream Player", "Watch DAZN sports online free, embedded live player.", "dazn.love")
-        ]
-        
-        results = []
-        for rank, (url, title, snippet, domain) in enumerate(mock_db[:max_results], 1):
-            results.append(SearchResult(
-                query=query,
-                search_engine="Yandex",
-                rank=rank,
-                url=url,
-                domain=domain,
-                page_title=title,
-                snippet=snippet
-            ))
-        return results
+        # No fabricated results: if every real source failed, report it and return nothing.
+        logger.warning(
+            f"[Yandex] No live results for '{query}' (SerpApi unavailable/failed and direct SERP "
+            f"scrape blocked or empty). Returning 0 results - nothing is substituted."
+        )
+        return []

@@ -51,5 +51,6 @@ outputs/takedown_notices/*
 outputs/report.json
 outputs/report.csv
 
+assets/*
 
 

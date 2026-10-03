@@ -6,6 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: dazn_anti_piracy_pipeline
+    env_file:
+      - path: .env
+        required: false
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO

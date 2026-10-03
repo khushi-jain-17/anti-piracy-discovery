@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     OUTPUT_DIR: Path = BASE_DIR / "outputs"
     SCREENSHOT_DIR: Path = OUTPUT_DIR / "screenshots"
     TAKEDOWN_DIR: Path = OUTPUT_DIR / "takedown_notices"
+    LOGO_REFERENCE_DIR: Path = BASE_DIR / "assets" / "reference_logos"
+    LOGO_DHASH_THRESHOLD: int = 10   # max Hamming distance (of 64 bits) for dHash match
+    LOGO_AHASH_THRESHOLD: int = 16   # max Hamming distance (of 64 bits) for aHash confirmation
     LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

@@ -5,12 +5,11 @@ import logging
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
-
 from config import settings
 from discovery import SearchOrchestrator, SearchResult
 from classification import DomainClassifier
 from detection import BrowserManager, PlayerDetector, NetworkSniffer
-from evidence import ScreenshotCapturer, TakedownNoticeGenerator, SocialDetector
+from evidence import ScreenshotCapturer, TakedownNoticeGenerator, SocialDetector, LogoMatcher, LogoMatchResult
 from reporting import ReportExporter, SummaryReporter
 
 # Reconfigure stdout/stderr encoding for UTF-8 compatibility (especially on Windows terminals)
@@ -50,6 +49,7 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
     player_detector = PlayerDetector(wait_seconds=settings.PLAYER_DETECTION_WAIT_SEC)
     screenshot_capturer = ScreenshotCapturer()
     takedown_generator = TakedownNoticeGenerator()
+    logo_matcher = LogoMatcher()
     
     final_records: List[Dict[str, Any]] = []
 
@@ -117,6 +117,16 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
                 player_status = "Not Applicable (Official)"
                 player_type = "Official Media"
 
+            # Perceptual-hash logo / on-screen graphic matching (Bonus)
+            logo_result = LogoMatchResult()
+            if screenshot_path and not screenshot_path.endswith("fallback.png"):
+                evidence_images = [screenshot_path]
+                ts_slug = timestamp_utc.replace(":", "-").replace(" ", "_")
+                player_crop = settings.SCREENSHOT_DIR / f"{ts_slug}_{s_res.domain.replace('.', '_').replace('/', '_')}_player.png"
+                if player_crop.exists():
+                    evidence_images.append(str(player_crop))
+                logo_result = logo_matcher.match_images(evidence_images)
+
             # Create final record matching required schema
             record = {
                 "search_engine": s_res.search_engine,
@@ -135,7 +145,10 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
                 "hosting_ip": item.hosting_ip,
                 "asn": item.asn,
                 "matched_heuristics": ", ".join(item.matched_heuristics),
-                "telegram_links": ", ".join(telegram_links) if telegram_links else "None"
+                "telegram_links": ", ".join(telegram_links) if telegram_links else "None",
+                "logo_match": logo_result.matched,
+                "logo_match_details": logo_result.summary,
+                "logo_match_similarity": logo_result.best_similarity,
             }
 
             # Generate DMCA takedown draft for confirmed pirate sites

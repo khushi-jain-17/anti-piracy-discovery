@@ -14,7 +14,7 @@ class NetworkLookupHelper:
             "asn": "Unknown",
             "org": "Unknown",
             "country": "Unknown",
-            "is_privacy_whois": True
+            "is_privacy_whois": False  # unknown unless a real WHOIS/RDAP lookup proves privacy
         }
         try:
             # 1. Resolve IP via socket
@@ -31,16 +31,5 @@ class NetworkLookupHelper:
                     info["country"] = data.get("country", "Unknown")
         except Exception as e:
             logger.debug(f"Network lookup for domain {domain} failed: {e}")
-            # Fallback for known test domains
-            if "dazn" in domain and "com" in domain:
-                info["hosting_ip"] = "151.101.1.209"
-                info["asn"] = "AS54113 Fastly, Inc."
-                info["org"] = "Fastly"
-                info["is_privacy_whois"] = False
-            elif any(x in domain for x in ["xyz", "st", "me", "app", "ru", "top", "cc", "love", "cn", "top"]):
-                info["hosting_ip"] = "104.21.48.112"
-                info["asn"] = "AS13335 Cloudflare, Inc."
-                info["org"] = "Cloudflare (Privacy Proxy)"
-                info["is_privacy_whois"] = True
 
         return info

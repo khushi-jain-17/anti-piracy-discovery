@@ -4,7 +4,7 @@ An automated, end-to-end anti-piracy discovery and evidence collection pipeline 
 
 ---
 
-## 🚀 Quick Start
+## ðŸš€ Quick Start
 
 ### 1. Install Dependencies
 ```bash
@@ -16,7 +16,10 @@ playwright install chromium
 
 ### 2. Run Main Discovery & Verification Pipeline
 ```bash
+
 python main.py --queries-per-lang 5 --max-results 5
+python main.py --queries-per-lang 2 --max-results 3
+
 ```
 
 ### Docker commands to run application
@@ -24,9 +27,11 @@ docker build -t dazn-anti-piracy .
 docker compose up discovery-pipeline                                                         
 docker compose run --rm test  
 
+docker compose build --no-cache
+
 ---
 
-## 📁 Output Artifacts (`outputs/`)
+## ðŸ“ Output Artifacts (`outputs/`)
 
 - `report.csv`: Complete discovery & classification dataset.
 - `report.json`: JSON output matching mandatory schema.
@@ -37,7 +42,7 @@ docker compose run --rm test
 
 ---
 
-## ⚙️ Configuration (`.env`)
+## âš™ï¸ Configuration (`.env`)
 
 Environment variables are managed in `.env` (excluded from git via `.gitignore`):
 
@@ -53,9 +58,15 @@ Environment variables are managed in `.env` (excluded from git via `.gitignore`)
 
 ---
 
-## ⚠️ Known Limitations
+## âš ï¸ Known Limitations
 
 1. **Search Engine Anti-Bot Controls:** Search engines (Yandex, Baidu) periodically enforce CAPTCHAs or rate-limiting on direct SERP HTML scraping. The pipeline handles this gracefully via SerpApi or heuristic SERP fallbacks.
 2. **Geo-blocking & Regional Access:** Certain regional streams (e.g. Russia, China) restrict access based on client IP location. Rotating proxy support (BrightData/Oxylabs) is recommended for production scaling.
 3. **JS Obfuscation & Dynamic Token Expiry:** Advanced pirate sites employ obfuscated stream URLs (`.m3u8` with short-lived tokens). The Network Sniffer captures outgoing requests directly from page context during rendering.
 
+
+---
+
+## Logo / On-screen Graphic Matching (Perceptual Hashing)
+
+Evidence screenshots are scanned against reference DAZN logos in `assets/reference_logos/` (dHash + aHash, multi-scale sliding window - see `evidence/logo_matcher.py`). Results appear as `logo_match`, `logo_match_details` and `logo_match_similarity` in the reports and in the DMCA drafts. The bundled logos are synthetic placeholders (`python scripts/generate_reference_logos.py`); replace them with real licensed DAZN assets. Tune with `LOGO_DHASH_THRESHOLD` / `LOGO_AHASH_THRESHOLD` in `.env`.

@@ -62,37 +62,9 @@ class BaiduSearchEngine(BaseSearchEngine):
         except Exception as e:
             logger.debug(f"[Baidu] Direct HTML scraper exception for '{query}': {e}")
 
-        # 3. Intelligent fallback generator for Chinese piracy queries
-        return self._generate_fallback(query, max_results)
-
-    def _generate_fallback(self, query: str, max_results: int) -> List[SearchResult]:
-        logger.info(f"[Baidu] Using heuristic SERP parser fallback for query: '{query}'")
-
-        mock_db = [
-            # Official / Legitimate
-            ("https://www.dazn.com/zh-CN/welcome", "DAZN 官方体育直播平台", "DAZN 官方网站，提供高清体育赛事直播与回放。", "dazn.com"),
-            ("https://baike.baidu.com/item/DAZN", "DAZN 百度百科", "DAZN 是一个全球性的体育流媒体服务平台。", "baidu.com"),
-            ("https://play.google.com/store/apps/details?id=com.dazn", "DAZN Google Play 应用", "官方 DAZN 安卓客户端下载。", "google.com"),
-            
-            # Pirate streaming sites in Chinese network space
-            ("https://zhibo8-dazn.xyz/live/f1-free", "DAZN 直播 _ DAZN 在线观看 免费高清直播", "免费提供 DAZN 频道直播，无插件在线观看 F1 及 Moto GP 赛事实时直播。", "zhibo8-dazn.xyz"),
-            ("https://tiyuzhibo.cc/dazn-online-free", "体育直播网 - DAZN 免费高清在线直播", "在线观看 DAZN 体育直播，高清 HTML5 播放器，实时 m3u8 信号。", "tiyuzhibo.cc"),
-            ("https://kanqiu.top/watch/dazn-live", "看球网 - DAZN 频道高清直播", "DAZN 免费直播，支持手机电脑流畅观看，无需注册。", "kanqiu.top"),
-            ("https://m3u8stream.cn/dazn-iptv", "DAZN IPTV 免费直播源 m3u8 播放", "最新 DAZN 体育直播源，网页在线播放器，全天候不间断。", "m3u8stream.cn"),
-            ("https://cctv5-dazn.me/live", "DAZN 在线直播 免费无插件", "免费提供 DAZN 1, DAZN 2 体育频道在线直播。", "cctv5-dazn.me"),
-            ("https://kayosports-free.cn/live-stream", "Kayo Sports 免费在线观看 - 体育直播", "Kayo sports free stream online, Australian sports streaming.", "kayosports-free.cn"),
-            ("https://foxtelsports.top/live", "Foxtel Sports Live Free - 免费体育直播", "Watch Foxtel sports live free, HD live stream online.", "foxtelsports.top")
-        ]
-
-        results = []
-        for rank, (url, title, snippet, domain) in enumerate(mock_db[:max_results], 1):
-            results.append(SearchResult(
-                query=query,
-                search_engine="Baidu",
-                rank=rank,
-                url=url,
-                domain=domain,
-                page_title=title,
-                snippet=snippet
-            ))
-        return results
+        # No fabricated results: if every real source failed, report it and return nothing.
+        logger.warning(
+            f"[Baidu] No live results for '{query}' (SerpApi unavailable/failed and direct SERP "
+            f"scrape blocked or empty). Returning 0 results - nothing is substituted."
+        )
+        return []

@@ -12,6 +12,21 @@ ALLOWLIST_DOMAINS = {
     "www.binge.com.au",
     "indazn.com",
 
+    # Official Sports Leagues & Content Partners
+    "motogp.com",
+    "formula1.com",
+    "f1.com",
+    "uefa.com",
+    "fifa.com",
+    "nfl.com",
+    "nba.com",
+
+    # Search Engines (to prevent indexing engines from being flagged as pirate hosts)
+    "baidu.com",
+    "yandex.com",
+    "yandex.ru",
+    "bing.com",
+
     # Official Social Media & App Distribution
     "youtube.com",
     "www.youtube.com",

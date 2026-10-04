@@ -1,7 +1,5 @@
 from pathlib import Path
-
 from PIL import Image, ImageDraw
-
 from evidence.logo_matcher import LogoMatcher, dhash, hamming
 
 

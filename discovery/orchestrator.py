@@ -6,7 +6,7 @@ from .baidu import BaiduSearchEngine
 
 logger = logging.getLogger(__name__)
 
-# Sample Query Sets as mandated by the prompt specification
+# Sample Query Sets as mandated by the prompt specification (5 per category = 20 queries total)
 SAMPLE_QUERIES = {
     "English": [
         "DAZN live stream free",
@@ -18,14 +18,23 @@ SAMPLE_QUERIES = {
     "Russian": [
         "DAZN смотреть онлайн бесплатно",
         "DAZN прямой эфир",
+        "DAZN трансляция онлайн бесплатно",
+        "DAZN бокс смотреть бесплатно",
+        "DAZN футбол прямой эфир",
     ],
     "Chinese": [
         "DAZN 直播",
         "DAZN 在线观看 免费",
+        "DAZN 足球直播 免费",
+        "DAZN 现场直播 在线",
+        "DAZN 免费看 直播",
     ],
     "Event-based": [
         "Moto GP live stream free",
         "Formula 1 DAZN live stream",
+        "UEFA Champions League DAZN free stream",
+        "El Clasico DAZN live stream free",
+        "UFC DAZN live stream free",
     ],
 }
 

@@ -1,72 +1,166 @@
 # DAZN Anti-Piracy Discovery & Verification Pipeline
 
-An automated, end-to-end anti-piracy discovery and evidence collection pipeline designed to find, classify, verify, and generate legally enforceable DMCA takedown evidence against illegal DAZN live streams.
+An automated, end-to-end intelligence and verification pipeline designed to discover unauthorized DAZN live sports streams across regional search engines, evaluate domain legitimacy, verify active video playback in a sandboxed headless browser, and produce legally defensible DMCA takedown evidence packages.
 
 ---
 
-## ðŸš€ Quick Start
+## Architecture & Core Workflow
 
-### 1. Install Dependencies
+The pipeline operates across five modular stages:
+
+1. **Search Discovery**: Executes targeted, multi-lingual search queries (English, Russian, Chinese, event-specific) across Yandex and Baidu using SerpApi with automated fallback mechanisms and URL canonicalization/deduplication.
+2. **Domain Classification**: Evaluates candidate domains against an authoritative allowlist and heuristic risk scoring (brand impersonation, piracy keyword density, risky TLDs, and ad/redirect networks).
+3. **Sandboxed Browser Verification**: Launches headless Chromium instances to inspect the DOM for video elements (HTML5, JW Player, Video.js, Clappr), resolve embedded iframes, and intercept network traffic for active streaming manifests (`.m3u8` HLS, `.mpd` DASH).
+4. **Evidence Collection & Intelligence**:
+   - Captures timestamped full-page and cropped video player screenshots.
+   - Extracts network hosting metadata (IP address and ASN/ISP resolution).
+   - Discovers affiliated piracy distribution channels (e.g., Telegram links).
+   - Performs perceptual hash matching (`dHash` and `aHash`) against DAZN reference logos to detect unauthorized on-screen brand assets.
+5. **Reporting & Legal Notice Generation**: Produces audit-ready CSV/JSON datasets, an executive summary dashboard, and auto-populated DMCA takedown notice drafts for confirmed pirate domains.
+
+---
+
+## Project Structure
+
+```text
+anti-piracy-discovery/
+├── assets/                  # Brand reference assets (official DAZN logos for visual matching)
+├── classification/          # Domain classification logic, heuristic scorer, and DNS/ASN lookup
+├── config/                  # Global settings, heuristics weights, and official domain allowlist
+├── detection/               # Playwright browser manager, player inspector, and network sniffer
+├── discovery/               # Search engine adapters (Yandex, Baidu) and search orchestrator
+├── evidence/                # Screenshot capture, DMCA notice generator, logo matcher, social link detector
+├── outputs/                 # Generated audit reports, screenshots, and takedown notices
+├── reporting/               # CSV, JSON, and Markdown summary export handlers
+├── scripts/                 # Utility scripts (e.g., reference logo fetcher)
+├── tests/                   # Pytest test suite covering core modules
+├── docker-compose.yml       # Docker Compose service definitions
+├── Dockerfile               # Container build definition for pipeline execution
+├── main.py                  # CLI entrypoint for discovery & verification pipeline
+└── requirements.txt         # Project Python dependencies
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.10+
+- [Optional] Docker and Docker Compose
+
+### 1. Installation
+
+Clone the repository and set up a virtual environment:
+
 ```bash
+# Clone repository
+git clone <repository-url>
+cd anti-piracy-discovery
+
+# Create and activate virtual environment
 python -m venv venv
+# On Windows:
 venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Install Playwright browser binaries
 playwright install chromium
 ```
 
-### 2. Run Main Discovery & Verification Pipeline
-```bash
+### 2. Configuration
 
-python main.py --queries-per-lang 5 --max-results 5
-python main.py --queries-per-lang 2 --max-results 3
+Create a `.env` file in the project root:
 
+```env
+SERPAPI_API_KEY=your_serpapi_key_here
+MAX_RESULTS_PER_QUERY=10
+HEADLESS=true
+BROWSER_TIMEOUT_MS=30000
+PLAYER_DETECTION_WAIT_SEC=5
+CONCURRENCY=3
+LOG_LEVEL=INFO
 ```
 
-### Docker commands to run application
-docker build -t dazn-anti-piracy .     
-docker compose up discovery-pipeline                                                         
-docker compose run --rm test  
-
-docker compose build --no-cache
-
----
-
-## ðŸ“ Output Artifacts (`outputs/`)
-
-- `report.csv`: Complete discovery & classification dataset.
-- `report.json`: JSON output matching mandatory schema.
-- `report_pirates.csv` / `report_pirates.json`: Pirate-only output dataset (excluding allowlisted domains).
-- `summary.md`: Summary report dashboard.
-- `screenshots/`: Timestamped full-page and cropped player screenshots (`YYYY-MM-DD_HH-MM-SS_domain_hash.png`).
-- `takedown_notices/`: Auto-generated DMCA takedown notice markdown drafts.
-
----
-
-## âš™ï¸ Configuration (`.env`)
-
-Environment variables are managed in `.env` (excluded from git via `.gitignore`):
+#### Environment Variables
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `SERPAPI_API_KEY` | SerpApi key for live Yandex / Baidu search queries |
-| `MAX_RESULTS_PER_QUERY` | `10` | Max search results to process per query |
+| `SERPAPI_API_KEY` | `""` | SerpApi key for live Yandex / Baidu search queries (optional fallback used if omitted) |
+| `MAX_RESULTS_PER_QUERY` | `10` | Maximum search results to ingest per query |
 | `HEADLESS` | `true` | Run Playwright Chromium in headless mode |
-| `BROWSER_TIMEOUT_MS` | `30000` | Page navigation timeout (ms) |
-| `PLAYER_DETECTION_WAIT_SEC` | `5` | Inspection window wait time for video playback |
-| `CONCURRENCY` | `3` | Parallel page verification concurrency |
+| `BROWSER_TIMEOUT_MS` | `30000` | Browser navigation timeout in milliseconds |
+| `PLAYER_DETECTION_WAIT_SEC` | `5` | Video player evaluation window in seconds |
+| `CONCURRENCY` | `3` | Concurrent worker limit for browser verification |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 ---
 
-## âš ï¸ Known Limitations
+## Usage
 
-1. **Search Engine Anti-Bot Controls:** Search engines (Yandex, Baidu) periodically enforce CAPTCHAs or rate-limiting on direct SERP HTML scraping. The pipeline handles this gracefully via SerpApi or heuristic SERP fallbacks.
-2. **Geo-blocking & Regional Access:** Certain regional streams (e.g. Russia, China) restrict access based on client IP location. Rotating proxy support (BrightData/Oxylabs) is recommended for production scaling.
-3. **JS Obfuscation & Dynamic Token Expiry:** Advanced pirate sites employ obfuscated stream URLs (`.m3u8` with short-lived tokens). The Network Sniffer captures outgoing requests directly from page context during rendering.
+### Run the Pipeline
 
+Execute the discovery and verification process via `main.py`:
+
+```bash
+# Standard run with default parameters
+python main.py
+
+# Custom query depth and result limits
+python main.py --queries-per-lang 5 --max-results 5
+
+# Debug mode with visible (headful) browser window
+python main.py --queries-per-lang 2 --max-results 3 --visible
+```
+
+#### CLI Arguments
+
+- `--queries-per-lang` *(int, default: 5)*: Number of targeted search queries to run per language/region category.
+- `--max-results` *(int, default: 5)*: Maximum search results retrieved per query.
+- `--visible` *(flag)*: Runs the browser in headful mode for real-time visual inspection.
+
+### Run Tests
+
+Execute the automated test suite with `pytest`:
+
+```bash
+python -m pytest
+```
 
 ---
 
-## Logo / On-screen Graphic Matching (Perceptual Hashing)
+## Docker Deployment
 
-Evidence screenshots are scanned against reference DAZN logos in `assets/reference_logos/` (dHash + aHash, multi-scale sliding window - see `evidence/logo_matcher.py`). Results appear as `logo_match`, `logo_match_details` and `logo_match_similarity` in the reports and in the DMCA drafts. The bundled logos are synthetic placeholders (`python scripts/generate_reference_logos.py`); replace them with real licensed DAZN assets. Tune with `LOGO_DHASH_THRESHOLD` / `LOGO_AHASH_THRESHOLD` in `.env`.
+To build and run the pipeline inside an isolated containerized environment:
+
+```bash
+# Build the Docker image
+docker build -t dazn-anti-piracy .
+
+# Run the discovery pipeline
+docker compose up discovery-pipeline
+
+# Run the test suite inside Docker
+docker compose run --rm test
+```
+
+Pipeline artifacts and reports are mounted to `./outputs` on the host machine.
+
+---
+
+## Output Deliverables (`outputs/`)
+
+Each execution populates the `outputs/` directory with structured intelligence and evidence:
+
+| Artifact | Format | Description |
+| :--- | :--- | :--- |
+| `report.csv` / `report.json` | CSV / JSON | Complete dataset containing every discovered URL, classification score, player status, and metadata. |
+| `report_pirates.csv` / `report_pirates.json` | CSV / JSON | Filtered dataset isolating confirmed and high-probability pirate live streams. |
+| `summary.md` | Markdown | Executive dashboard summarizing total scanned URLs, domain classifications, and active playback statistics. |
+| `screenshots/` | PNG | Timestamped full-page screenshots and cropped video player regions (`YYYY-MM-DD_HH-MM-SS_domain.png`). |
+| `takedown_notices/` | Markdown | Legally formatted DMCA takedown notice drafts populated with URL, host ASN, IP, and timestamp. |
+

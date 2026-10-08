@@ -33,10 +33,12 @@ anti-piracy-discovery/
 ├── outputs/                 # Generated audit reports, screenshots, and takedown notices
 ├── reporting/               # CSV, JSON, and Markdown summary export handlers
 ├── scripts/                 # Utility scripts (e.g., reference logo fetcher)
-├── tests/                   # Pytest test suite covering core modules
-├── docker-compose.yml       # Docker Compose service definitions
+├── tasks/                   # Celery distributed tasks (asynchronous verification worker)
+├── tests/                   # Pytest test suite covering core modules (including Celery & Redis)
+├── celery_app.py            # Celery application configuration and Redis broker bindings
+├── docker-compose.yml       # Production multi-service stack (Redis broker, Celery worker cluster, pipeline)
 ├── Dockerfile               # Container build definition for pipeline execution
-├── main.py                  # CLI entrypoint for discovery & verification pipeline
+├── main.py                  # CLI entrypoint for discovery & verification pipeline (standalone & distributed)
 └── requirements.txt         # Project Python dependencies
 ```
 
@@ -96,25 +98,44 @@ LOG_LEVEL=INFO
 | `BROWSER_TIMEOUT_MS` | `30000` | Browser navigation timeout in milliseconds |
 | `PLAYER_DETECTION_WAIT_SEC` | `5` | Video player evaluation window in seconds |
 | `CONCURRENCY` | `3` | Concurrent worker limit for browser verification |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL for caching and message broker |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery message broker endpoint |
+| `CELERY_RESULT_BACKEND` | `redis://localhost:6379/1` | Celery task result backend endpoint |
+| `REDIS_CACHE_TTL_SEC` | `86400` | 24-hour domain classification cache TTL |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 ---
 
 ## Usage
 
-### Run the Pipeline
+### 1. Standalone Execution Mode (Local Async Playwright)
 
-Execute the discovery and verification process via `main.py`:
+Execute the discovery and verification process via `main.py` directly (includes automatic Redis caching if a Redis instance is available, with graceful in-memory fallback):
 
 ```bash
 # Standard run with default parameters
 python main.py
 
-# Custom query depth and result limits
+# Run directly on machine
 python main.py --queries-per-lang 5 --max-results 5
 
 # Debug mode with visible (headful) browser window
 python main.py --queries-per-lang 2 --max-results 3 --visible
+```
+
+### 2. Production Distributed Mode (Celery + Redis Worker Pool)
+
+Scale the pipeline horizontally to handle high throughput across a distributed worker pool:
+
+```bash
+# Terminal 1: Start Redis (or use Docker container)
+redis-server
+
+# Terminal 2: Start Celery verification worker pool
+celery -A celery_app worker --loglevel=INFO -c 3
+
+# Terminal 3: Dispatch discovery batch into Celery queue
+python main.py --distributed --queries-per-lang 5 --max-results 5
 ```
 
 #### CLI Arguments
@@ -122,30 +143,56 @@ python main.py --queries-per-lang 2 --max-results 3 --visible
 - `--queries-per-lang` *(int, default: 5)*: Number of targeted search queries to run per language/region category.
 - `--max-results` *(int, default: 5)*: Maximum search results retrieved per query.
 - `--visible` *(flag)*: Runs the browser in headful mode for real-time visual inspection.
+- `--distributed` *(flag)*: Dispatches verification tasks to the Celery worker cluster and coordinates via Redis broker.
 
 ### Run Tests
 
 Execute the automated test suite with `pytest`:
 
 ```bash
-python -m pytest
+python -m pytest -v
 ```
 
 ---
 
-## Docker Deployment
-
-To build and run the pipeline inside an isolated containerized environment:
+## Docker Deployment (Full Production Stack)
 
 ```bash
-# Build the Docker image
+# 1. Build the Docker image
 docker build -t dazn-anti-piracy .
 
-# Run the discovery pipeline
+# 2. Run the discovery pipeline
 docker compose up discovery-pipeline
 
-# Run the test suite inside Docker
+# 3. Run the test suite inside Docker
 docker compose run --rm test
+
+```
+
+To build and run the multi-container stack (Redis broker, Celery worker cluster, and discovery orchestrator) inside isolated containerized sandboxes:
+
+```bash
+# 1. Build and start Redis broker + Celery worker cluster in the background
+docker compose up -d redis celery-worker
+
+# 2. Run the distributed discovery and verification pipeline
+docker compose up discovery-pipeline
+
+# 3. Run the complete automated test suite inside Docker
+docker compose run --rm test
+
+# Rebuild the container and run the discovery pipeline
+docker compose up --build piracy-pipeline
+```
+
+# Run the Full Distributed Stack with Celery & Redis
+```bash
+# 1. Start Redis and Celery worker in the background
+docker compose up -d --build redis celery-worker
+
+# 2. Run the distributed pipeline
+docker compose up --build discovery-pipeline-distributed
+
 ```
 
 Pipeline artifacts and reports are mounted to `./outputs` on the host machine.

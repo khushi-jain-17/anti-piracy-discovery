@@ -1,27 +1,100 @@
-version: '3.8'
-
 services:
-  discovery-pipeline:
+  # 1. Redis: In-Memory Message Broker & 24h Deduplication Cache
+  redis:
+    image: redis:7-alpine
+    container_name: dazn_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 2. Celery Worker Pool: Distributed Playwright Browser Sandbox Cluster
+  celery-worker:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: dazn_anti_piracy_pipeline
+    container_name: dazn_celery_worker
+    entrypoint: ["celery", "-A", "celery_app", "worker", "--loglevel=INFO", "-c", "3"]
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file:
       - path: .env
         required: false
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
     volumes:
       - ./outputs:/app/outputs
+      - ./assets:/app/assets
+
+  # 3. Direct Discovery Pipeline (Runs end-to-end and outputs reports directly)
+  discovery-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dazn_anti_piracy_pipeline
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    volumes:
+      - ./outputs:/app/outputs
+      - ./assets:/app/assets
     command: ["--queries-per-lang", "5", "--max-results", "5"]
 
+  # 4. Distributed Pipeline (Dispatches tasks across Celery Worker Cluster)
+  discovery-pipeline-distributed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dazn_anti_piracy_pipeline_distributed
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    volumes:
+      - ./outputs:/app/outputs
+      - ./assets:/app/assets
+    command: ["--queries-per-lang", "5", "--max-results", "5", "--distributed"]
+
+  # 5. Automated Pytest Test Suite Runner
   test:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: dazn_anti_piracy_tests
     entrypoint: ["python", "-m", "pytest"]
-    command: ["tests/"]
+    command: ["-v"]
     volumes:
       - ./outputs:/app/outputs
+
+volumes:
+  redis_data:

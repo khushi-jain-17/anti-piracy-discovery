@@ -102,39 +102,46 @@ flowchart TD
 
 ## 3. High-Throughput Scaling Architecture (1,000+ URLs in 2 Hours)
 
-To scale from prototype to production handling **1,000+ URLs in 2 hours (~8-9 URLs/sec)**, the system would be architected as follows:
+To process **1,000+ URLs within 2 hours (~8-9 URLs/sec)**, the pipeline implements a production-grade distributed architecture powered by **Celery** worker pools and **Redis** for in-memory queueing and deduplication caching:
 
 ```
-[SERP Discovery Cron / API] ──> [Redis Queue / RabbitMQ] ──> [Celery / Worker Pool (10-20 Nodes)]
-                                                                    │
-                                                     ┌──────────────┴──────────────┐
-                                                     ▼                             ▼
-                                          [Async Playwright Cluster]      [PostgreSQL / S3 Evidence]
+[SERP Discovery Orchestrator] ──> [Redis Task Queue (DB 0)] ──> [Celery Worker Cluster (10-20 Nodes)]
+                                                                          │
+                                                           ┌──────────────┴──────────────┐
+                                                           ▼                             ▼
+                                                [Async Playwright Sandbox]     [Redis Deduplication Cache (TTL 24h)]
+                                                           │
+                                                           ▼
+                                                [Evidence & DMCA Notices / S3]
 ```
 
-### Key Scaling Strategies:
-1. **Containerized Sandbox Deployment (Docker / Kubernetes):**
-   - The pipeline runs inside an isolated Docker container based on `mcr.microsoft.com/playwright/python`.
-   - Protects production infrastructure against malicious web scripts, exploit payloads, and drive-by downloads on unknown pirate streaming sites.
-   - Mounted volume volumes (`/app/outputs`) persist output CSV/JSON reports, timestamped screenshot evidence, and auto-generated DMCA takedown notice drafts back to host storage or S3 buckets.
+### Key Scaling Strategies (Implemented in Codebase):
 
-2. **Concurrency & Worker Pools:**
-   - Use `asyncio` with Playwright `BrowserContext` pooling (reusing browser instances across requests rather than launching a new browser process per URL).
-   - Horizontal scaling via Docker container worker nodes managed by Kubernetes (K8s) or AWS ECS.
+1. **Distributed Job Queueing (`celery_app.py`, `tasks/verification.py`):**
+   - Verification tasks (`tasks.verify_url_task`) are decoupled from search discovery.
+   - The orchestrator batches and dispatches jobs to Redis broker (`REDIS_URL`).
+   - Celery workers with prefetch multiplier `1` execute browser verifications independently, ensuring that slow/hanging pirate sites never block other worker threads.
 
-3. **Distributed Job Queueing:**
-   - Decouple Discovery from Verification using **Celery + Redis** or AWS SQS.
-   - Priority queues: Fast-path allowlist domains vs heavy Playwright player checks.
+2. **24-Hour Redis Deduplication Cache (`classification/cache.py`):**
+   - Every verified domain is cached with a 24-hour TTL (`dazn:domain:{domain}`).
+   - Re-encountered domains across multi-engine searches (Yandex and Baidu) or periodic re-runs are immediately resolved from Redis without re-launching headless browser contexts.
+   - Falls back gracefully to an in-memory dictionary if Redis is temporarily offline.
 
-4. **Caching & Deduplication:**
-   - **Redis Cache Layer:** Cache domain classification results (TTL: 24 hours). Known official or defunct domains do not re-trigger headless browser checks.
+3. **Containerized Sandbox Deployment (`docker-compose.yml`, `Dockerfile`):**
+   - The production stack defines isolated services for `redis`, `celery-worker`, and `discovery-pipeline`.
+   - Protects host environments from drive-by downloads or malicious scripts.
+   - Mounted `/app/outputs` directories persist audit datasets, screenshot evidence, and DMCA notices.
 
-5. **Proxy & Geo-Location Strategy:**
-   - Residential and datacenter proxy rotation (e.g., BrightData / Oxylabs) to bypass geo-restrictions for regional streams (Russia, China, EU).
+4. **Concurrency & Worker Pools:**
+   - Celery worker pools scale horizontally by spinning up additional worker containers (`docker compose up --scale celery-worker=5`).
+   - Browser contexts are recycled per task to minimize memory overhead.
+
+5. **Proxy & Geo-Location Strategy (Production Recommendation):**
+   - Integration hooks for residential rotating proxies (BrightData / Oxylabs) to bypass regional geo-blocks (Russia, China, CIS).
 
 6. **Storage & Evidence Management:**
-   - Evidence screenshots stored directly in AWS S3 or Google Cloud Storage with presigned URLs.
-   - Structured results stored in PostgreSQL with Elasticsearch for rapid domain querying and historical threat tracking.
+   - Modular storage structure ready for AWS S3 / Cloud Storage upload with presigned URLs.
+   - Structured JSON/CSV results suitable for relational databases or Elasticsearch threat tracking.
 
 ---
 

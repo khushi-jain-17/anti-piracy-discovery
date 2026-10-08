@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     LOGO_REFERENCE_DIR: Path = BASE_DIR / "assets" / "reference_logos"
     LOGO_DHASH_THRESHOLD: int = 10   # max Hamming distance (of 64 bits) for dHash match
     LOGO_AHASH_THRESHOLD: int = 16   # max Hamming distance (of 64 bits) for aHash confirmation
+    # Redis & Celery Distributed Task Queue Settings
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", os.getenv("REDIS_URL", "redis://localhost:6379/1"))
+    REDIS_CACHE_TTL_SEC: int = 86400  # 24-hour domain classification cache TTL
+    CELERY_WORKER_CONCURRENCY: int = 3
+    USE_DISTRIBUTED_QUEUE: bool = False
     LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

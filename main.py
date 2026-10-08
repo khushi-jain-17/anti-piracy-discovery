@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 from config import settings
 from discovery import SearchOrchestrator, SearchResult
-from classification import DomainClassifier
+from classification import DomainClassifier, RedisDomainCache
 from detection import BrowserManager, PlayerDetector, NetworkSniffer
 from evidence import ScreenshotCapturer, TakedownNoticeGenerator, SocialDetector, LogoMatcher, LogoMatchResult
 from reporting import ReportExporter, SummaryReporter
@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5, headless: bool = True):
+async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 20, headless: bool = True):
     logger.info("=" * 65)
     logger.info("  STARTING DAZN ANTI-PIRACY DISCOVERY & VERIFICATION PIPELINE ")
     logger.info("=" * 65)
@@ -51,6 +51,7 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
     takedown_generator = TakedownNoticeGenerator()
     logo_matcher = LogoMatcher()
     
+    domain_cache = RedisDomainCache()
     final_records: List[Dict[str, Any]] = []
 
     try:
@@ -60,6 +61,17 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
         for idx, item in enumerate(classified_results, 1):
             s_res = item.search_result
             logger.info(f"[{idx}/{len(classified_results)}] Verifying {item.classification} URL: {s_res.url}")
+
+            # 1. Check Redis deduplication cache
+            cached_data = domain_cache.get(s_res.domain)
+            if cached_data and idx > 5:
+                logger.info(f"[{idx}/{len(classified_results)}] Redis Cache HIT for '{s_res.domain}' - reusing verified record")
+                cached_rec = dict(cached_data)
+                cached_rec["search_engine"] = s_res.search_engine
+                cached_rec["query"] = s_res.query
+                cached_rec["rank"] = s_res.rank
+                final_records.append(cached_rec)
+                continue
 
             timestamp_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -156,6 +168,8 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
                 takedown_path = takedown_generator.generate_notice(record)
                 record["takedown_notice_path"] = takedown_path
 
+            # Save verified record to Redis cache for deduplication
+            domain_cache.set(s_res.domain, record)
             final_records.append(record)
 
     finally:
@@ -170,6 +184,74 @@ async def run_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5
     # 5. Summary Report
     SummaryReporter.generate_summary(final_records)
     logger.info(f"Pipeline completed successfully. Outputs saved in '{settings.OUTPUT_DIR}'.")
+    return final_records
+
+
+def run_distributed_pipeline(queries_per_lang: int = 5, max_results_per_query: int = 5):
+    """
+    Production distributed pipeline:
+    Orchestrates search discovery and domain classification, then distributes
+    browser verification tasks across a Celery worker pool using Redis as the message broker.
+    """
+    logger.info("=" * 65)
+    logger.info("  STARTING DISTRIBUTED DAZN ANTI-PIRACY PIPELINE (CELERY + REDIS) ")
+    logger.info("=" * 65)
+
+    # 1. Search Discovery
+    orchestrator = SearchOrchestrator()
+    discovered_items: List[SearchResult] = orchestrator.run_discovery(
+        max_results_per_query=max_results_per_query,
+        queries_per_lang=queries_per_lang
+    )
+    logger.info(f"Discovered {len(discovered_items)} unique URLs from search engines.")
+
+    # 2. Domain Classification
+    classifier = DomainClassifier()
+    classified_results = [classifier.classify(item) for item in discovered_items]
+    logger.info("Completed domain classification and heuristic scoring.")
+
+    # 3. Dispatch to Celery Worker Cluster via Redis
+    from celery import group
+    from tasks.verification import verify_url_task
+
+    task_payloads = []
+    for item in classified_results:
+        s_res = item.search_result
+        task_payloads.append({
+            "search_engine": s_res.search_engine,
+            "query": s_res.query,
+            "rank": s_res.rank,
+            "url": s_res.url,
+            "domain": s_res.domain,
+            "classification": item.classification,
+            "confidence_score": item.confidence_score,
+            "hosting_ip": item.hosting_ip,
+            "asn": item.asn,
+            "matched_heuristics": ", ".join(item.matched_heuristics),
+        })
+
+    logger.info(f"Dispatching {len(task_payloads)} jobs to Celery workers via Redis ({settings.CELERY_BROKER_URL})...")
+    
+    try:
+        job_group = group(verify_url_task.s(payload) for payload in task_payloads)
+        async_results = job_group.apply_async()
+        logger.info(f"Jobs submitted to Redis broker. Waiting for Celery worker pool completion...")
+        final_records = async_results.get(timeout=300)
+        logger.info(f"All {len(final_records)} Celery worker tasks completed successfully.")
+    except Exception as e:
+        logger.warning(f"Celery worker cluster unavailable ({e}). Falling back to local async runner.")
+        return asyncio.run(run_pipeline(queries_per_lang, max_results_per_query))
+
+    # 4. Output CSV and JSON Reports
+    exporter = ReportExporter()
+    exporter.export_csv(final_records, "report.csv")
+    exporter.export_json(final_records, "report.json")
+    exporter.export_pirates_only(final_records, "report_pirates.csv", "report_pirates.json")
+
+    # 5. Summary Report
+    SummaryReporter.generate_summary(final_records)
+    logger.info(f"Distributed pipeline completed successfully. Outputs saved in '{settings.OUTPUT_DIR}'.")
+    return final_records
 
 
 def main():
@@ -177,13 +259,22 @@ def main():
     parser.add_argument("--queries-per-lang", type=int, default=5, help="Number of queries per language category")
     parser.add_argument("--max-results", type=int, default=5, help="Max results per query search")
     parser.add_argument("--visible", action="store_true", help="Run browser in visible mode (headful) instead of hidden background")
+    parser.add_argument("--distributed", action="store_true", help="Run in distributed mode via Celery worker pool and Redis broker")
     args = parser.parse_args()
 
-    asyncio.run(run_pipeline(
-        queries_per_lang=args.queries_per_lang,
-        max_results_per_query=args.max_results,
-        headless=not args.visible
-    ))
+    if args.distributed or settings.USE_DISTRIBUTED_QUEUE:
+        run_distributed_pipeline(
+            queries_per_lang=args.queries_per_lang,
+            max_results_per_query=args.max_results
+        )
+    else:
+        asyncio.run(run_pipeline(
+            queries_per_lang=args.queries_per_lang,
+            max_results_per_query=args.max_results,
+            headless=not args.visible
+        ))
+
 
 if __name__ == "__main__":
     main()
+
